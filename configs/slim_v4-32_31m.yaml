@@ -51,3 +51,7 @@ model:
   gamma_unembed: 1.
 
 checkpoint_interval: 9200
+
+hf_dataset:
+  num_workers: 8
+  select_column: "text"
