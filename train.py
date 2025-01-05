@@ -887,7 +887,6 @@ def main_contained(config, logger):
                     operator.add, jax.tree.map(lambda w: w.size, state.weights)
                 )
                 tokens = loader.load(step).targets.size
-                # tokens = config.training.tokens.batch * config.training.tokens.len
                 print(f"Model params: {model_params:_}")
                 print(f"Tokens: {tokens:_}")
                 device_flops = training_io.get_flops_per_device()
