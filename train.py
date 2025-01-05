@@ -476,7 +476,9 @@ class Model:
         x = shardops.all_gather("B/d L M/t -> B/d L M", x)
         ln = shardops.all_gather("M/t/d -> M", jnp.float32(self.final_layer_norm))
         x = jnp.bfloat16(rms_norm(x) * ln)
-        unembed = shardops.all_gather("V/t M/d -> V/t M", jnp.bfloat16(self.unembed))
+        unembed = unembed_mult * shardops.all_gather(
+            "V/t M/d -> V/t M", jnp.bfloat16(self.unembed)
+        )
         logits = shardops.einsum_unreduced(
             "B/d L M, V/t M -> B/d L V/t",
             x,
