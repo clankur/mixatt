@@ -3,6 +3,8 @@
 from collections import namedtuple
 import operator
 import os
+import signal
+import subprocess
 import time
 
 import env
@@ -18,7 +20,7 @@ from functools import cached_property, partial
 from typing import Any, Optional, Tuple, Union
 import hydra
 from typeguard import typechecked
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import jax
 from jax import lax
 from jax.sharding import PartitionSpec
@@ -244,6 +246,7 @@ class Model:
     embed: f32["vocab/t d_model/d"]
     unembed: f32["vocab/t d_model/d"]
     transformer: Transformer
+    final_layer_norm: f32["d_model/d/t"]
 
     @staticmethod
     @typechecked
@@ -327,14 +330,16 @@ class Model:
         arrays = Model(
             embed=embed,
             unembed=unembed,
-            ln1=ln1,
-            ln2=ln2,
-            w_q=w_q,
-            w_kv=w_kv,
-            w_o=w_o,
-            w_gate=w_gate,
-            w_up=w_up,
-            w_down=w_down,
+            transformer=Transformer(
+                ln1=ln1,
+                ln2=ln2,
+                w_q=w_q,
+                w_kv=w_kv,
+                w_o=w_o,
+                w_gate=w_gate,
+                w_up=w_up,
+                w_down=w_down,
+            ),
             final_layer_norm=final_layer_norm,
         )
         shardings = make_shardings(Model)
@@ -438,18 +443,24 @@ class Model:
             nx = jnp.bfloat16(rms_norm(gx) * ln2)
 
             # FFN, using SwiGLU
-            w_gate = shardops.all_gather("M/d F/t -> M F/t", jnp.bfloat16(w_gate))
+            w_gate = shardops.all_gather(
+                "M/d F/t -> M F/t", jnp.bfloat16(layer_weights.w_gate)
+            )
             gate_proj = save_for_backward(
                 hidden_mult
                 * shardops.einsum_unreduced("B/d L M, M F/t -> B/d L F/t", nx, w_gate)
             )
-            w_up = shardops.all_gather("M/d F/t -> M F/t", jnp.bfloat16(w_up))
+            w_up = shardops.all_gather(
+                "M/d F/t -> M F/t", jnp.bfloat16(layer_weights.w_up)
+            )
             up_proj = save_for_backward(
                 hidden_mult
                 * shardops.einsum_unreduced("B/d L M, M F/t -> B/d L F/t", nx, w_up)
             )
             y = jax.nn.swish(gate_proj) * up_proj
-            w_down = shardops.all_gather("M/d F/t -> M F/t", jnp.bfloat16(w_down))
+            w_down = shardops.all_gather(
+                "M/d F/t -> M F/t", jnp.bfloat16(layer_weights.w_down)
+            )
 
             ffn_out_mult = (h.d_ff / h.base.d_ff) ** -p.hidden_param_mult
             ffn_out = ffn_out_mult * shardops.einsum_unreduced(
@@ -652,14 +663,16 @@ def training_step(
         lr_scales = Model(
             embed=embed_lr_scale,
             unembed=unembed_lr_scale,
-            ln1=1.0,
-            ln2=1.0,
-            w_q=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
-            w_kv=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
-            w_o=h.gamma_hidden * (target_head_dim / base_head_dim) ** -p.hidden_lr,
-            w_gate=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
-            w_up=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
-            w_down=h.gamma_hidden * (h.d_ff / base.d_ff) ** -p.hidden_lr,
+            transformer=Transformer(
+                ln1=1.0,
+                ln2=1.0,
+                w_q=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
+                w_kv=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
+                w_o=h.gamma_hidden * (target_head_dim / base_head_dim) ** -p.hidden_lr,
+                w_gate=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
+                w_up=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
+                w_down=h.gamma_hidden * (h.d_ff / base.d_ff) ** -p.hidden_lr,
+            ),
             final_layer_norm=1.0,
         )
 
@@ -838,13 +851,13 @@ def main_contained(config, logger):
             # if half way point, double seq length and halve batch size
             if step == config.training.steps // 2:
                 print("updating seq length and batch size")
-                tokens = dataclasses.replace(
+                tokens = replace(
                     config.training.tokens,
                     len=config.training.tokens.len * 2,
                     batch=max(config.mesh.d, config.training.tokens.batch // 2),
                 )
-                config = dataclasses.replace(
-                    config, training=dataclasses.replace(config.training, tokens=tokens)
+                config = replace(
+                    config, training=replace(config.training, tokens=tokens)
                 )
                 loader = get_loader(
                     "train", config.training_data, config.training.tokens
@@ -858,9 +871,7 @@ def main_contained(config, logger):
                 ).compile()
 
             batch = loader.load(step)
-            state, output, synth_metrics = c_training_step(
-                state, jnp.uint32(step), batch
-            )
+            state, output = c_training_step(state, jnp.uint32(step), batch)
 
             # Run profile for two steps, to include data loading time in between them.
             if training_io.is_device_0() and step == start_step + 2:
@@ -893,8 +904,6 @@ def main_contained(config, logger):
                     )
                 else:
                     cum_metrics = output
-                if batch.loss_masks is not None:
-                    training_io.log(step, logger, synth_metrics)
                 training_io.log(step, logger, cum_metrics)
                 cum_metrics = output
             else:
