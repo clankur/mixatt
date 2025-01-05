@@ -15,8 +15,8 @@ training:
   steps_for_lr: 2400
   learning_rate: 1.35e-2
   tokens:
-    length: 2048
     batch: 256
+    len: 2048
   use_grad_clip: true
   use_gpu: false
   use_single_pod: false
