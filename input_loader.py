@@ -23,7 +23,9 @@ https://docs.mosaicml.com/projects/streaming/en/stable/fundamentals/shuffling.ht
 
 from concurrent.futures import ThreadPoolExecutor
 import functools
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, List
+import time
+import random
 
 from typeguard import typechecked
 from shardlib.shardtypes import bool_, pytree_dataclass, u32
@@ -34,7 +36,8 @@ import jax
 import numpy as np
 from jax.sharding import PartitionSpec as P
 import datetime
-import jax
+from jax import numpy as jnp
+from huggingface_hub.utils import HfHubHTTPError
 
 # imports for hf dataloader
 import numpy as onp
@@ -303,6 +306,7 @@ def _div_exact(a: int, b: int) -> int:
 
 @functools.partial(jax.jit, donate_argnums=(0,))
 @typechecked
+@shardtypes.scope
 def _decode(encoded_tokens: u32[b"batch/d len"]) -> TokenBatch:
     # encoded_tokens encoding:
     #  2*id+1 for the first token in a sequence
@@ -343,6 +347,9 @@ class HuggingFaceDataParams:
     num_workers: int
     sequences_packed_per_batch: int
     name: Optional[str] = None
+    seed: int = 0
+    max_retries: int = 5
+    select_column: Optional[str] = "text"
 
 
 class HuggingFaceDataLoader:
@@ -369,7 +376,7 @@ class HuggingFaceDataLoader:
         ), "Tokenizer must have a special 0 token"
 
         # setup an iterator over the dataset
-        tokenize = functools.partial(
+        self.tokenize = functools.partial(
             self.tokenizer,
             padding=False,
             truncation=False,
@@ -379,16 +386,40 @@ class HuggingFaceDataLoader:
             return_attention_mask=False,
             return_tensors="np",
         )
-        dataset = load_dataset(config.path, config.name, streaming=True, split=split)
-        tokenized = dataset.select_columns(["text"]).map(
-            tokenize, input_columns=["text"], remove_columns=["text"]
+        self.base_delay = 5
+        self.config = config
+        for attempt in range(config.max_retries):
+            try:
+                self.dataset = load_dataset(
+                    config.path, config.name, streaming=True, split=split
+                )
+                break
+            except HfHubHTTPError as e:
+                if e.response.status_code == 429:  # Too Many Requests
+                    if attempt == config.max_retries - 1:
+                        raise
+
+                    # Exponential backoff
+                    delay = self.base_delay * (2**attempt)
+                    print(
+                        f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{config.max_retries}"
+                    )
+                    time.sleep(delay)
+                else:
+                    raise
+        dataset = self.dataset.shuffle(seed=self.config.seed)
+
+        tokenized = dataset.select_columns([self.config.select_column]).map(
+            self.tokenize,
+            input_columns=[self.config.select_column],
+            remove_columns=[self.config.select_column],
         )
         dataloader = DataLoader(
             tokenized,
-            num_workers=config.num_workers,
+            num_workers=self.config.num_workers,
             collate_fn=self.collate,
             drop_last=True,
-            batch_size=config.sequences_packed_per_batch,
+            batch_size=self.config.sequences_packed_per_batch,
         )
         self.iterator = iter(dataloader)
 
@@ -407,9 +438,44 @@ class HuggingFaceDataLoader:
         shape = (self.batch_size, self.max_seq_len)
         return flat_batch.reshape(shape), flat_is_start.reshape(shape)
 
+    def _get_next_batch(self, step):
+        for attempt in range(self.config.max_retries):
+            try:
+                batch, is_start = next(self.iterator)
+                return batch, is_start
+            except StopIteration:
+                dataset = self.dataset.shuffle(seed=self.config.seed + step)
+                tokenized = dataset.select_columns([self.config.select_column]).map(
+                    self.tokenize,
+                    input_columns=[self.config.select_column],
+                    remove_columns=[self.config.select_column],
+                )
+                dataloader = DataLoader(
+                    tokenized,
+                    num_workers=self.config.num_workers,
+                    collate_fn=self.collate,
+                    drop_last=True,
+                    batch_size=self.config.sequences_packed_per_batch,
+                )
+                self.iterator = iter(dataloader)
+                batch, is_start = next(self.iterator)
+            except HfHubHTTPError as e:
+                if e.response.status_code == 429:
+                    if attempt == self.config.max_retries - 1:
+                        raise
+
+                    # Exponential backoff
+                    delay = self.base_delay * (2**attempt)
+                    print(
+                        f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{self.config.max_retries}"
+                    )
+                    time.sleep(delay)
+                else:
+                    raise
+
     def load(self, step):
         shape = (self.batch_size, self.max_seq_len)
-        batch, is_start = next(self.iterator)
+        batch, is_start = self._get_next_batch(step)
 
         def get_shard(x: jax.Array, indexing: Tuple[slice]) -> jax.Array:
             shard = x[indexing]

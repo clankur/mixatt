@@ -189,6 +189,33 @@ def index_unreduced(spec: str, table, indices):
     return result
 
 
+def pmean_across_replicas(pspec: jax.sharding.PartitionSpec, x):
+    """Computes pmean across all replicated (non-sharded) dimensions of the tensor"""
+    with jax.named_scope(f"pmean_across_replicas({pspec})"):
+        sharded_axes = set()
+        for axis in pspec:
+            if axis is None:
+                continue
+            elif isinstance(axis, str):
+                sharded_axes.add(axis)
+            elif isinstance(axis, tuple):
+                for a in axis:
+                    if isinstance(a, str):
+                        sharded_axes.add(a)
+            else:
+                raise ValueError(f"Unknown axis type {axis}")
+
+        pmean_axes = []
+        for axis in jax._src.core.thread_local_state.trace_state.axis_env:
+            if axis.name not in sharded_axes:
+                pmean_axes.append(axis.name)
+
+        if pmean_axes:
+            return jax.lax.pmean(x, tuple(pmean_axes))
+        else:
+            return x
+
+
 def axis_size(name: str) -> int:
     """Return the size of the axis with the given name."""
     return jax.lax.psum(1, name)

@@ -47,8 +47,7 @@ import typing
 from collections.abc import Sequence
 from contextvars import ContextVar
 from enum import IntEnum
-from typing import Any, Union
-from typing import get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 from typeguard import check_type_internal, typechecked
 import jax
 import jax.numpy as jnp

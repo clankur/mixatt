@@ -19,9 +19,26 @@ model:
   n_kv: 2
   d_head: 32
   layers: 2
-  vocab: 1280
+  vocab: 1280 
   d_ff: 1024
   rope_max_timescale: 256
+  
+  a_attn: 1
+  a_output: 1
+  zero_queries: true
+  zero_unembed: true
+  base:
+    d_model: 256
+    n_q_per_kv: 2
+    n_kv: 2
+    d_head: 32
+    d_ff: 1024
+  parameterization: "sp" 
+  fully_aligned: false
+  gamma_embed: 1. 
+  gamma_hidden: 1. 
+  gamma_unembed: 1. 
+
 
 paths:
   root_working_dir: '/tmp'

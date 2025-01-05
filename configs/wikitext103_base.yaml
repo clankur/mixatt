@@ -22,17 +22,18 @@ training:
   use_grad_clip: true
   use_gpu: false
 
-flat_tokens:
-  filespec: "" # Fill in
-  streams: 1
-  read_blocks_per_shuffle_buffer: 128
-  sequences_per_read_block: 1024
+hf_dataset:
+  path: Salesforce/wikitext
+  name: wikitext-103-raw-v1
+  num_workers: 1
+  tokenizer: mistralai/Mistral-7B-v0.1 # may require huggingface-cli login
+  sequences_packed_per_batch: 120
   seed: 0
-  sequence_packing: true
+  max_retries: 5
 
 paths:
   # root_working_dir can also be a path on a local filesystem
-  root_working_dir: "/tmp"
+  root_working_dir: "/tmp/"
 
 num_hosts: 1
 
