@@ -576,9 +576,9 @@ class TrainingHparams:
     tokens: TokenBatchParams
     seed: int
     queue: Optional[str] = None
-    use_grad_clip: bool = True
-    use_gpu: bool = False
-    use_single_pod: bool = False
+    use_grad_clip: Optional[bool] = True
+    use_gpu: Optional[bool] = False
+    use_single_pod: Optional[bool] = False
 
 
 @pytree_dataclass
