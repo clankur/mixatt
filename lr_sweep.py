@@ -12,9 +12,10 @@ import json
 
 @dataclass
 class Config:
-    model_name: str
     queue_name: str
     project_name: Optional[str] = None
+    model_name: Optional[str] = None
+    template_id: Optional[str] = None
 
 
 def get_task_details(config: Config):
@@ -41,7 +42,7 @@ def lr_sweep(
     config_name,
     model_name,
     queue_name,
-    template_task_id,
+    template_id,
     start_lr=5e-4,
     max_lr=5e-2,
     iterations=5,
@@ -131,10 +132,10 @@ def lr_sweep(
         ema = np.convolve(data, weights, mode="full")[: len(data)]
         return ema
 
-    def train(learning_rate, template_task_id):
+    def train(learning_rate, template_id):
         # Clone the template task and override the learning rate
         child_task: Task = Task.clone(
-            source_task=template_task_id,
+            source_task=template_id,
             name=f"{model_name}_lr:{learning_rate:.6f}",
         )
         child_task.set_system_tags([])
@@ -153,7 +154,7 @@ def lr_sweep(
     def get_loss(lr):
         lr = round(lr, 5)
         if lr not in loss_per_learning_rate:
-            loss_per_learning_rate[lr] = train(lr, template_task_id)
+            loss_per_learning_rate[lr] = train(lr, template_id)
         return loss_per_learning_rate[lr][0]
 
     lr_low, lr_high = exponential_search()
@@ -171,21 +172,25 @@ def lr_sweep(
 def main(config):
     config = jax_extra.make_dataclass_from_dict(Config, config)
     config_name = hydra.core.hydra_config.HydraConfig.get()["job"]["config_name"]
-    project_name, task_name = get_task_details(config)
 
-    print(f"{project_name=}")
-    print(f"{task_name=}")
+    if config.template_id:
+        template_id = config.template_id
+    else:
+        project_name, task_name = get_task_details(config)
+        print(f"{project_name=}")
+        print(f"{task_name=}")
+        template_id = Task.get_task(
+            project_name=project_name,
+            task_name=task_name,
+        ).id
 
-    template_task_id = Task.get_task(
-        project_name=project_name,
-        task_name=task_name,
-    ).id
+    model_name = config.model_name or config_name
 
     lr_sweep(
         config_name=config_name,
-        model_name=config.model_name,
+        model_name=model_name,
         queue_name=config.queue_name,
-        template_task_id=template_task_id,
+        template_id=template_id,
     )
 
 
