@@ -581,6 +581,7 @@ class TrainingHparams:
     use_grad_clip: Optional[bool] = True
     use_gpu: Optional[bool] = False
     use_single_pod: Optional[bool] = False
+    use_multistage_training: Optional[bool] = False
 
 
 @pytree_dataclass
@@ -850,8 +851,11 @@ def main_contained(config, logger):
 
             state, output = c_training_step(state, jnp.uint32(step), loader.load(step))
 
-            # if half way point, double seq length and halve batch size
-            if step == config.training.steps // 2:
+            # if half way point and multistage training is enabled, double seq length and halve batch size
+            if (
+                step == config.training.steps // 2
+                and config.training.use_multistage_training
+            ):
                 print("updating seq length and batch size")
                 tokens = replace(
                     config.training.tokens,
