@@ -944,7 +944,7 @@ def get_filtered_overrides():
         "training.queue",
     ]
     return [
-        override.lstrip("+").split(".")[-1]
+        f"{override.lstrip('+').split('=')[0].split('.')[-1]}={override.split('=')[1]}"
         for override in overrides.split(",")
         if override and override.lstrip("+").split("=")[0] not in ignore_overrides
     ]
