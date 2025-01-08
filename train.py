@@ -937,17 +937,21 @@ def clear_tpu_locks():
         pass
 
 
-def get_model_name(config_name: str):
+def get_filtered_overrides():
+    """Get filtered override strings from Hydra config, excluding certain overrides."""
     overrides = hydra.core.hydra_config.HydraConfig.get()["job"]["override_dirname"]
     ignore_overrides = [
         "training.queue",
     ]
-    overrides = [
-        override.lstrip("+")
+    return [
+        override.lstrip("+").split(".")[-1]
         for override in overrides.split(",")
-        if override.lstrip("+").split("=")[0] not in ignore_overrides
+        if override and override.lstrip("+").split("=")[0] not in ignore_overrides
     ]
 
+
+def get_model_name(config_name: str):
+    overrides = get_filtered_overrides()
     overrides = "_".join(overrides)
     return f"{config_name}_{overrides}" if overrides else config_name
 
@@ -973,6 +977,10 @@ def main(config):
             project_name=f"{config_name}/{git_branch_name}", task_name=task_name
         )
 
+        # Add git branch and filtered overrides as tags
+        override_tags = get_filtered_overrides()
+        task.add_tags([git_branch_name] + override_tags)
+
         if config.training.use_gpu:
             task.set_packages("requirements-gpu.txt")
         else:
@@ -985,7 +993,6 @@ def main(config):
         print("Datasets CLI Environment:")
         print(result.stdout)
 
-        task.add_tags([git_branch_name])
         logger = task.get_logger()
         task.execute_remotely(queue_name=config.training.queue)
         task.launch_multi_node(
