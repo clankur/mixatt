@@ -218,15 +218,6 @@ def get_parameterization(style: str, fully_aligned: bool = True):
 
 
 @pytree_dataclass
-class SyntheticMetrics:
-    avg_confidence: f32[b""]
-    avg_char_confidence: f32[b""]
-    max_char_confidence: f32[b""]
-    avg_start_char_confidence: f32[b""]
-    avg_final_char_confidence: f32[b""]
-
-
-@pytree_dataclass
 class TransformerLayer:
     ln1: f32["d_model/t/d"]
     ln2: f32["d_model/t/d"]
