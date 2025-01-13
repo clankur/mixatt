@@ -52,5 +52,5 @@ model:
 checkpoint_interval: 9200
 
 hf_dataset:
-  num_workers: 8
+  num_workers:  32
   select_column: "text"
