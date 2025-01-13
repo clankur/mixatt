@@ -569,6 +569,7 @@ class TrainingHparams:
     tokens: TokenBatchParams
     seed: int
     queue: Optional[str] = None
+    n_log_iterations: Optional[int] = 5000
     use_grad_clip: Optional[bool] = True
     use_gpu: Optional[bool] = False
     use_single_pod: Optional[bool] = False
@@ -814,8 +815,8 @@ def main_contained(config, logger):
         ).compile()
         date = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         # training_io.save_hlo_svg(os.path.join(model_dir, f'training_step_optimized_hlo_{date}.svg'), c_training_step)
-
-        log_interval = math.ceil(config.training.steps / 5000)
+        n_log_iterations = config.training.n_log_iterations or 5000
+        log_interval = math.ceil(config.training.steps / n_log_iterations)
         print(f"{log_interval=}")
 
         cum_metrics = None
