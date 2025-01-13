@@ -164,3 +164,4 @@ cython_debug/
 test.py
 configs/c4_v4-32_arxiv_base.yaml
 .vscode
+nohup.out
