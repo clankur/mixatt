@@ -21,7 +21,7 @@ training:
   use_gpu: false
 
 model:
-  d_model: 128
+  d_model: 64
   n_q_per_kv: 1 
   n_kv: 1 
   d_head: 32 
