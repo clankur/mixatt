@@ -590,6 +590,20 @@ class State:
         return State(weights=weights, adam_mu=adam_mu, adam_nu=adam_nu)
 
 
+@partial(jax.jit, static_argnums=(1))
+@shardtypes.scope
+def eval_model(state: State, h: Hparams, batch: TokenBatch) -> f32[b""]:
+    @partial(shardtypes.typed_shard_map, check_rep=False)
+    def eval_model_shard(state: State, batch: TokenBatch) -> f32[b""]:
+        loss, _ = jax.value_and_grad(lambda weights: weights.loss(h, batch))(
+            state.weights
+        )
+        loss = jax.lax.psum(loss, ("d", "t"))
+        return loss
+
+    return eval_model_shard(state, batch)
+
+
 @partial(jax.jit, static_argnums=(2, 3), donate_argnums=(0,))
 @shardtypes.scope
 def training_step(
@@ -908,6 +922,28 @@ def main_contained(config, logger):
 
         end_time = time.time()
         print(f"Total time: {end_time - start_time:.2f} seconds")
+
+        print("Evaluating final model...")
+        loader = get_loader("validation", config.training_data, config.training.tokens)
+
+        total_loss = 0.0
+        num_batches = config.training.steps // 10
+
+        for step in range(num_batches):
+            batch = loader.load(step)
+            loss = eval_model(state, config.model, batch)
+            total_loss += loss
+
+        avg_loss = total_loss / num_batches
+        perplexity = jnp.exp(avg_loss)
+
+        print(f"\nEvaluation Results:")
+        print(f"Average Loss: {avg_loss:.4f}")
+        print(f"Perplexity: {perplexity:.4f}")
+
+        if logger:
+            logger.report_scalar("eval", "final_loss", avg_loss)
+            logger.report_scalar("eval", "final_perplexity", perplexity)
 
 
 def clear_tpu_locks():
