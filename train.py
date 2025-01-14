@@ -936,14 +936,24 @@ def main_contained(config, logger):
 
         avg_loss = total_loss / num_batches
         perplexity = jnp.exp(avg_loss)
+        if training_io.is_device_0():
+            print(f"\nEvaluation Results:")
+            print(f"Average Loss: {avg_loss:.4f}")
+            print(f"Perplexity: {perplexity:.4f}")
 
-        print(f"\nEvaluation Results:")
-        print(f"Average Loss: {avg_loss:.4f}")
-        print(f"Perplexity: {perplexity:.4f}")
-
-        if logger:
-            logger.report_scalar("eval", "final_loss", avg_loss)
-            logger.report_scalar("eval", "final_perplexity", perplexity)
+            if logger:
+                logger.report_scalar(
+                    series="eval",
+                    title="final_loss",
+                    value=avg_loss,
+                    iteration=config.training.steps,
+                )
+                logger.report_scalar(
+                    series="eval",
+                    title="final_perplexity",
+                    value=perplexity,
+                    iteration=config.training.steps,
+                )
 
 
 def clear_tpu_locks():
