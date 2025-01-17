@@ -653,6 +653,12 @@ def training_step(
 
         # AdamW optimizer with global gradient clipping.
         grad_leaves, grad_treedef = jax.tree_util.tree_flatten(grad)
+        grad_leaves = [
+            shardops.pmean_across_replicas(pspec, g)
+            for g, pspec in zip(
+                grad_leaves, tree_leaves(shardtypes.make_partition_specs(State))
+            )
+        ]
         global_norm_square = jnp.float32(0.0)
         for g in grad_leaves:
             assert g.dtype == jnp.float32
@@ -702,9 +708,6 @@ def training_step(
             tree_leaves(shardtypes.make_partition_specs(State)),
             tree_leaves(lr_scales),
         ):
-            assert shardtypes.is_fully_sharded(
-                spec
-            ), "Weight update is only correctly scaled for fully sharded weights."
             # Gradient clipping
             g = g * rescale
             # Adam scaling
