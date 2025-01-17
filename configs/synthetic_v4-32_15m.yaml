@@ -1,0 +1,72 @@
+# python -m train --config-name=c4_a100x8x4_10m +paths.model_name=270m
+defaults:
+- synthetic_base
+- _self_
+
+num_hosts: 4
+
+mesh:
+  d: 16
+  t: 1
+
+training:
+  warmup_steps: 290
+  steps:        2900 
+  steps_for_lr: 2900 
+  learning_rate: 4.2e-3
+  tokens:
+    batch: 256 
+  use_grad_clip: true
+  use_gpu: false 
+  use_checkpoint: false 
+
+model:
+  d_model: 256
+  n_q_per_kv: 1
+  n_kv: 16 
+  d_head: 64 
+  d_ff: 1024 
+  layers: 8
+  vocab: 49 
+
+  base:
+    d_model: 256 
+    n_q_per_kv: 1
+    n_kv: 16 
+    d_head: 64 
+    d_ff: 1024 
+
+  rope_max_timescale: 10000
+
+  window_size: 32 
+  n_kv_reuses: 2
+  shared_kv_idx:
+    - 0
+    - 1 
+    - 1
+    - 2
+    - 2
+    - 0
+    - 3
+    - 3
+  sa_layers:
+    - 0 
+    - 5 
+
+  a_attn: 1.
+  a_output: 1.
+  zero_queries: true
+  zero_unembed: true
+
+  parameterization: "sp" 
+  fully_aligned: false
+  gamma_embed: 1. 
+  gamma_hidden: 1. 
+  gamma_unembed: 1.
+  
+checkpoint_interval: 9200
+
+paths:
+  # root_working_dir can also be a path on a local filesystem
+  root_working_dir: "/tmp"
+

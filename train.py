@@ -39,6 +39,7 @@ from shardlib.shardtypes import (
     f32,
     pytree_dataclass,
     u32,
+    i32,
     make_shardings,
     Array,
 )
@@ -81,6 +82,12 @@ class Hparams:
 
     # fields for position embeddings
     rope_max_timescale: int
+
+    # parameters for mixattention
+    window_size: int
+    n_kv_reuses: int
+    shared_kv_idx: tuple[int]
+    sa_layers: tuple[int]
 
     # parameters for mup
     a_attn: float
@@ -219,6 +226,7 @@ def get_parameterization(style: str, fully_aligned: bool = True):
 
 @pytree_dataclass
 class TransformerLayer:
+    cache_idx: f32[""]
     ln1: f32["d_model/t/d"]
     ln2: f32["d_model/t/d"]
     w_q: f32["d_model/d n_q_per_kv n_kv/t d_head"]
@@ -318,10 +326,17 @@ class Model:
                 (h.vocab, h.d_model),
                 dtype=jnp.float32,
             )
+
+        assert (
+            len(h.shared_kv_idx) == h.layers
+        ), f"Number of layers {h.layers} != length of shared_kv_idx {len(h.shared_kv_idx)}"
+
+        cache_idx = jnp.array(h.shared_kv_idx, dtype=jnp.float32)
         arrays = Model(
             embed=embed,
             unembed=unembed,
             transformer=Transformer(
+                cache_idx=cache_idx,
                 ln1=ln1,
                 ln2=ln2,
                 w_q=w_q,
@@ -354,7 +369,7 @@ class Model:
 
         x = shardops.psum_scatter("B/d L M -> B/d L M/t", x)
 
-        L = ids.shape[1]
+        B, L = ids.shape
         segment_ids = jnp.cumsum(is_seq_start, axis=1)
         segment_mask: bool_[b"B/d L L"] = (
             segment_ids[:, :, jnp.newaxis] == segment_ids[:, jnp.newaxis, :]
@@ -365,16 +380,37 @@ class Model:
         causal_mask: bool_[b"1 L L 1 1"] = jnp.tril(
             jnp.ones((L, L), dtype=jnp.bool_), 0
         )[jnp.newaxis, ..., jnp.newaxis, jnp.newaxis]
-        causal_mask: bool_[b"B/d L L 1 1"] = jnp.logical_and(segment_mask, causal_mask)
+        local_mask: bool_[b"1 L L 1 1"] = jnp.triu(
+            jnp.ones((L, L), dtype=jnp.bool_), 1 - h.window_size
+        )[jnp.newaxis, ..., jnp.newaxis, jnp.newaxis]
 
+        causal_mask: bool_[b"B/d L L 1 1"] = jnp.logical_and(segment_mask, causal_mask)
         rope_table = RopeTable.create(L, h)
+
+        kv_cache = jnp.zeros(
+            (h.n_kv_reuses, 2, B, L, h.n_kv, h.d_head), dtype=jnp.bfloat16
+        )
+        kv_cache = shardops.psum_scatter(
+            "n_kv_reuses k_v B/d L K D -> n_kv_reuses k_v B/d L K/t D", kv_cache
+        )
+        cache_initialized = jnp.zeros((h.n_kv_reuses,), dtype=jnp.bool_)
 
         ##### Transformer blocks.
         @explicit_activation_checkpointing
         @typechecked
         def loop_body(
-            x: bf16[b"B/d L M/t"], layer_weights: TransformerLayer
-        ) -> Tuple[bf16[b"B/d L M/t"], Tuple[()]]:
+            carry: Tuple[bf16[b"B/d L M/t"], i32[b""]], layer_weights: TransformerLayer
+        ) -> Tuple[Tuple[bf16[b"B/d L M/t"], i32[b""]], Tuple[()]]:
+            nonlocal kv_cache, cache_initialized
+
+            x, layer_idx = carry
+
+            use_local_window_attn = jax.lax.cond(
+                jnp.isin(layer_idx, jnp.array(h.sa_layers)),
+                lambda: True,
+                lambda: False,
+            )
+
             # Pre-attention RMSNorm
             ln1 = shardops.all_gather("M/t/d -> M", jnp.float32(layer_weights.ln1))
             gx = shardops.all_gather("B/d L M/t -> B/d L M", x)
@@ -397,6 +433,25 @@ class Model:
             k, v = hidden_mult * shardops.einsum_unreduced(
                 "B/d L M, k_v M K/t D -> k_v B/d L K/t D", nx, w_kv
             )
+
+            cache_idx = jnp.int32(layer_weights.cache_idx)
+
+            def populate_cache():
+                nonlocal kv_cache, cache_initialized, cache_idx
+                kv = hidden_mult * shardops.einsum_unreduced(
+                    "B/d L M, k_v M K/t D -> k_v B/d L K/t D", nx, w_kv
+                )
+                kv_cache = kv_cache.at[cache_idx].set(kv)
+                cache_initialized = cache_initialized.at[cache_idx].set(True)
+                return kv_cache, cache_initialized
+
+            kv_cache, cache_initialized = jax.lax.cond(
+                cache_initialized[cache_idx],
+                lambda: (kv_cache, cache_initialized),
+                populate_cache,
+            )
+            k, v = kv_cache[cache_idx]
+
             k = save_for_backward(k)
             v = save_for_backward(v)
             k = rope_table.apply("L d -> 1 L 1 d", k)
@@ -412,7 +467,13 @@ class Model:
                 k,
                 preferred_element_type=jnp.float32,
             )
-            logits = jnp.where(causal_mask, logits, -1e10)
+
+            attn_mask: bool_[b"B/d L L 1 1"] = jax.lax.select(
+                use_local_window_attn,
+                jnp.logical_and(causal_mask, local_mask),
+                causal_mask,
+            )
+            logits = jnp.where(attn_mask, logits, -1e10)
             probs = jnp.bfloat16(jax.nn.softmax(logits, axis=2))
             attn_out = shardops.einsum_unreduced(
                 "B/d Qlen Klen Q K/t, B/d Klen K/t D -> B/d Qlen Q K/t D", probs, v
@@ -459,9 +520,11 @@ class Model:
             )
             ffn_out = shardops.psum_scatter("B/d L M -> B/d L M/t", ffn_out)
 
-            return jnp.bfloat16(x + ffn_out), ()
+            return (jnp.bfloat16(x + ffn_out), layer_idx + 1), ()
 
-        x, () = jax.lax.scan(loop_body, jnp.bfloat16(x), self.transformer)
+        (x, _), () = jax.lax.scan(
+            loop_body, (jnp.bfloat16(x), jnp.int32(0)), self.transformer
+        )
 
         ##### Final layernorm and output projection.
         x = shardops.all_gather("B/d L M/t -> B/d L M", x)
@@ -653,6 +716,12 @@ def training_step(
 
         # AdamW optimizer with global gradient clipping.
         grad_leaves, grad_treedef = jax.tree_util.tree_flatten(grad)
+        grad_leaves = [
+            shardops.pmean_across_replicas(pspec, g)
+            for g, pspec in zip(
+                grad_leaves, tree_leaves(shardtypes.make_partition_specs(State))
+            )
+        ]
         global_norm_square = jnp.float32(0.0)
         for g in grad_leaves:
             assert g.dtype == jnp.float32
@@ -673,6 +742,7 @@ def training_step(
             embed=embed_lr_scale,
             unembed=unembed_lr_scale,
             transformer=Transformer(
+                cache_idx=0.0,
                 ln1=1.0,
                 ln2=1.0,
                 w_q=h.gamma_hidden * (h.d_model / base.d_model) ** -p.hidden_lr,
@@ -702,9 +772,6 @@ def training_step(
             tree_leaves(shardtypes.make_partition_specs(State)),
             tree_leaves(lr_scales),
         ):
-            assert shardtypes.is_fully_sharded(
-                spec
-            ), "Weight update is only correctly scaled for fully sharded weights."
             # Gradient clipping
             g = g * rescale
             # Adam scaling
