@@ -85,7 +85,7 @@ class Hparams:
 
     # parameters for mixattention
     window_size: int
-    n_kv_reuses: int
+    n_kv_caches: int
     shared_kv_idx: tuple[int]
     sa_layers: tuple[int]
 
@@ -388,12 +388,12 @@ class Model:
         rope_table = RopeTable.create(L, h)
 
         kv_cache = jnp.zeros(
-            (h.n_kv_reuses, 2, B, L, h.n_kv, h.d_head), dtype=jnp.bfloat16
+            (h.n_kv_caches, 2, B, L, h.n_kv, h.d_head), dtype=jnp.bfloat16
         )
         kv_cache = shardops.psum_scatter(
-            "n_kv_reuses k_v B/d L K D -> n_kv_reuses k_v B/d L K/t D", kv_cache
+            "n_kv_caches k_v B/d L K D -> n_kv_caches k_v B/d L K/t D", kv_cache
         )
-        cache_initialized = jnp.zeros((h.n_kv_reuses,), dtype=jnp.bool_)
+        cache_initialized = jnp.zeros((h.n_kv_caches,), dtype=jnp.bool_)
 
         ##### Transformer blocks.
         @explicit_activation_checkpointing
