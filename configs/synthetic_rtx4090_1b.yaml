@@ -40,19 +40,17 @@ model:
 
   # parameters for mixattention
   window_size: 16 
-  n_kv_reuses: 2
-  shared_kv_idx:
-    - 0
-    - 1 
-    - 1
-    - 2
-    - 2
-    - 0
-    - 3
-    - 3
-  sa_layers:
-    - 0 
-    - 5 
+  n_kv_caches: 2
+  reuse_kv_map:
+    - [0, 0]
+    - [1, 1]
+    - [2, 1]
+    - [3, 2]
+    - [4, 2]
+    - [5, 0]
+    - [6, 3]
+    - [7, 3]
+  sa_layers: [0, 5]
 
   # parameters for mup
   a_attn: 1.

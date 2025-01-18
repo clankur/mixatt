@@ -11,7 +11,7 @@ mesh:
 
 training:
   warmup_steps: 290
-  steps: 2900
+  steps:        2900
   steps_for_lr: 2900
   learning_rate: 7.3e-3
   tokens:
@@ -34,8 +34,18 @@ model:
     d_ff: 1024
 
   window_size: 128
-  reuse_kv_map: ((0, 0), (1, 0), (2, 1), (3, 1), (4, 2), (5, 3), (6, 3), (7, 2))
-  sa_layers: (4, 7)
+  reuse_kv_map:
+    - [0, 0]
+    - [1, 0]
+    - [2, 1]
+    - [3, 1]
+    - [4, 2]
+    - [5, 3]
+    - [6, 3]
+    - [7, 2]
+  sa_layers:
+    - 4
+    - 7
 
   rope_max_timescale: 10000
   a_attn: 1.
