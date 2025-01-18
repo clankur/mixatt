@@ -86,7 +86,7 @@ class Hparams:
     # parameters for mixattention
     window_size: int
     n_kv_caches: int
-    shared_kv_idx: tuple[int]
+    reuse_kv_map: tuple[tuple[int, int]]  # List of (layer_idx, cache_idx) pairs
     sa_layers: tuple[int]
 
     # parameters for mup
@@ -101,6 +101,23 @@ class Hparams:
     gamma_embed: float
     gamma_hidden: float
     gamma_unembed: float
+
+    @property
+    def kv_cache_indices(self) -> tuple[int]:
+        """Convert reuse_kv_map to kv_cache_indices format.
+
+        reuse_kv_map is a list of (layer_idx, cache_idx) pairs that specify which layers
+        share which KV cache indices. For example:
+        ((0, 0), (1, 0), (2, 1), (3, 1)) means:
+        - Layer 0 uses cache index 0
+        - Layer 1 uses cache index 0 (shares with layer 0)
+        - Layer 2 uses cache index 1
+        - Layer 3 uses cache index 1 (shares with layer 2)
+        """
+        kv_indices = [0] * self.layers  # Initialize with zeros
+        for layer_idx, cache_idx in self.reuse_kv_map:
+            kv_indices[layer_idx] = cache_idx
+        return tuple(kv_indices)
 
 
 def get_parameterization(style: str, fully_aligned: bool = True):
@@ -328,10 +345,10 @@ class Model:
             )
 
         assert (
-            len(h.shared_kv_idx) == h.layers
-        ), f"Number of layers {h.layers} != length of shared_kv_idx {len(h.shared_kv_idx)}"
+            len(h.kv_cache_indices) == h.layers
+        ), f"Number of layers {h.layers} != length of kv_cache_indices {len(h.kv_cache_indices)}"
 
-        cache_idx = jnp.array(h.shared_kv_idx, dtype=jnp.float32)
+        cache_idx = jnp.array(h.kv_cache_indices, dtype=jnp.float32)
         arrays = Model(
             embed=embed,
             unembed=unembed,
