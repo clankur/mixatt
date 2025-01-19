@@ -572,7 +572,7 @@ class TrainingHparams:
     n_log_iterations: Optional[int] = 5000
     use_grad_clip: Optional[bool] = True
     use_gpu: Optional[bool] = False
-    use_single_pod: Optional[bool] = False
+    use_single_worker: Optional[bool] = False
     use_multistage_training: Optional[bool] = False
 
 
@@ -791,7 +791,7 @@ def main_contained(config, logger):
     # TODO: check this is true and if not, provide our own that actually is fusable.
 
     # 4x 1 chip (2 cores) per process:
-    if config.training.use_single_pod:
+    if config.training.use_single_worker:
         os.environ["TPU_CHIPS_PER_HOST_BOUNDS"] = "1,1,1"
         os.environ["TPU_HOST_BOUNDS"] = "1,1,1"
     jax.config.update("jax_threefry_partitionable", True)
