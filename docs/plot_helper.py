@@ -2,6 +2,24 @@ from clearml import Task
 import matplotlib.pyplot as plt
 
 
+def get_experiment_ids_from_url(url: str) -> list[str]:
+    """Extract experiment IDs from a ClearML compare-experiments URL.
+
+    Args:
+        url (str): ClearML URL containing experiment IDs
+
+    Returns:
+        list[str]: List of experiment IDs
+    """
+    # Find the ids= parameter and extract everything after it until the next / or end of string
+    if "ids=" not in url:
+        raise ValueError("URL does not contain experiment IDs in the expected format")
+
+    ids_section = url.split("ids=")[1].split("/")[0]
+    experiment_ids = ids_section.split(",")
+    return experiment_ids
+
+
 def get_loss_data(task_ids):
     loss_data = {}
     for task_id in task_ids:
