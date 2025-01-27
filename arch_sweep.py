@@ -66,6 +66,9 @@ def get_git_hash() -> str:
         return ""
 
 
+GIT_HASH = get_git_hash()
+
+
 def find_existing_experiment(
     params: Dict,
     filter_by_hash: bool = True,
@@ -73,7 +76,7 @@ def find_existing_experiment(
     """Find an existing experiment with the same configuration."""
     # TODO: figure out how to get the version_num/githash from ClearML
     task_filter = {"system_tags": ["-multi_node_instance"]}
-    tags = [f"git_hash={get_git_hash()}"] if filter_by_hash else []
+    tags = [f"git_hash={GIT_HASH}"] if filter_by_hash else []
     tasks = Task.get_tasks(task_filter=task_filter, tags=tags)
     for task in tasks:
         # TODO: add check if task.get_last_iteration() < model.steps
@@ -107,7 +110,7 @@ def train_model(
         name=f"{model_name}_{param_str}",
     )
     child_task.set_system_tags([])
-    child_task.set_parameter("Hydra/git_hash", get_git_hash())
+    child_task.set_parameter("Hydra/git_hash", GIT_HASH)
 
     # Set all parameters
     for key, value in params.items():
