@@ -48,4 +48,4 @@ model:
   gamma_hidden: 1. 
   gamma_unembed: 1.
    
-checkpoint_interval: 9200
+checkpoint_interval: 23000
