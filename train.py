@@ -922,7 +922,7 @@ def main_contained(config, logger):
 
         end_time = time.time()
         print(f"Total time: {end_time - start_time:.2f} seconds")
-
+        training_io.save_checkpoint(model_dir, config.training.steps, state, config.io)
         print("Evaluating final model...")
         loader = get_loader("validation", config.training_data, config.training.tokens)
 
