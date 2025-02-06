@@ -51,4 +51,4 @@ model:
   gamma_unembed: 1.
 
 
-checkpoint_interval: 9200
+checkpoint_interval: 600
