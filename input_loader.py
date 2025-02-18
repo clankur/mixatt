@@ -511,6 +511,7 @@ class LongCrawl64Dataloader:
         self.dataset = zarr.open(self.path, mode="r")
         self.docs_per_batch = token_batch_params.batch
         self.context_size = token_batch_params.len
+        self.max_token_id = 50303  # GPT-2 tiktoken vocabulary size - 1
 
         # Step properties
         self.tokens_per_batch = self.docs_per_batch * self.context_size
@@ -548,8 +549,8 @@ class LongCrawl64Dataloader:
         text = np.roll(data, 1, axis=-1)
         text[..., 0] = 50256  # eot token from tiktoken
         minibatch = {
-            "text": np.array(text),
-            "targets": np.array(data),
+            "text": np.array(text).astype(np.uint32),
+            "targets": np.array(data).astype(np.uint32),
         }
         return minibatch
 
@@ -558,16 +559,13 @@ class LongCrawl64Dataloader:
         minibatch = self[step]
 
         # Create is_seq_start array - True only for first token of each document
-        is_seq_start = np.zeros(
-            (self.docs_per_batch, self.context_size), dtype=np.bool_
-        )
+        shape = (self.docs_per_batch, self.context_size)
+        is_seq_start = np.zeros(shape, dtype=np.bool_)
         is_seq_start[:, 0] = (
             True  # First token of each document is a sequence start (no sequence packing)
         )
 
         # Create the TokenBatch with proper sharding
-        shape = (self.docs_per_batch, self.context_size)
-
         def get_shard(x: jax.Array, indexing: Tuple[slice]) -> jax.Array:
             shard = x[indexing]
             return shard
@@ -597,6 +595,6 @@ def get_loader(
     elif isinstance(config, HuggingFaceDataParams):
         return HuggingFaceDataLoader(split, config, token_batch_params)
     elif isinstance(config, LongCrawl64Params):
-        return LongCrawl64Dataloader(config, token_batch_params)
+        return LongCrawl64Dataloader(split, config, token_batch_params)
     else:
         raise ValueError(f"Unknown config type {type(config)}")
