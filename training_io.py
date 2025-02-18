@@ -333,6 +333,8 @@ def get_flops_per_device():
         result = 312e12
     elif device.startswith("TPU v4"):
         result = 275e12
+    elif device.startswith("NVIDIA GeForce RTX 4090"):
+        result = 82.6e12
     else:
         print(
             f"Unrecognized device, assuming ridiculously low 1 MFLOPS. Device name: {device}"
