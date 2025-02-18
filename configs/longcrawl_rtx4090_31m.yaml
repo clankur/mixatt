@@ -10,13 +10,13 @@ mesh:
   t: 1
 
 training:
-  warmup_steps: 2320 
-  steps:        23200 
-  steps_for_lr: 23200 
+  warmup_steps: 3840 
+  steps:        38400 
+  steps_for_lr: 38400 
   learning_rate: 7.3e-3
   tokens:
-    batch: 1 
-    len: 8192
+    batch: 4 
+    len: 4096 
 
 model:
   d_model: 256 
@@ -48,4 +48,4 @@ model:
   zero_queries: true
   zero_unembed: true
 
-checkpoint_interval: 9200
+checkpoint_interval: 400 
