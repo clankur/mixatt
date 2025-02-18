@@ -494,7 +494,6 @@ class HuggingFaceDataLoader:
 @dataclass(frozen=True)
 class LongCrawl64Params:
     path: str
-    streams: int  # TODO: setup some parallelism
     seed: int = 0
 
 
@@ -524,12 +523,15 @@ class LongCrawl64Dataloader:
             self.dataset.shape[1] % self.context_size
         )
         self.dataset_tokens = self.doc_count * self.doc_length
+        self.num_hosts = jax.process_count()
+        self.host_index = jax.process_index()
 
     def __len__(self):
-        return self.dataset_tokens // self.tokens_per_batch
+        return self.dataset_tokens // (self.tokens_per_batch * self.num_hosts)
 
     def __getitem__(self, index):
         # Identify corner of the rectangle
+        index = index + self.host_index * len(self)
         row_chunks = self.doc_count // self.docs_per_batch
         context_idx = index // row_chunks
         context_physical = context_idx * self.context_size
