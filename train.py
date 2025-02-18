@@ -904,7 +904,7 @@ def main_contained(config, logger):
                 model_params = jax.tree.reduce(
                     operator.add, jax.tree.map(lambda w: w.size, state.weights)
                 )
-                tokens = loader.load(step).targets.size
+                tokens = batch.targets.size
                 print(f"Model params: {model_params:_}")
                 print(f"Tokens: {tokens:_}")
                 device_flops = training_io.get_flops_per_device()
@@ -930,7 +930,7 @@ def main_contained(config, logger):
 
         end_time = time.time()
         print(f"Total time: {end_time - start_time:.2f} seconds")
-
+        training_io.save_checkpoint(model_dir, config.training.steps, state, config.io)
         print("Evaluating final model...")
         loader = get_loader("validation", config.training_data, config.training.tokens)
 
@@ -986,9 +986,7 @@ def clear_tpu_locks():
 def get_filtered_overrides():
     """Get filtered override strings from Hydra config, excluding certain overrides."""
     overrides = hydra.core.hydra_config.HydraConfig.get()["job"]["override_dirname"]
-    ignore_overrides = [
-        "training.queue",
-    ]
+    ignore_overrides = ["training.queue", "flat_tokens.filespec"]
     return [
         f"{override.lstrip('+').split('=')[0].split('.')[-1]}={override.split('=')[1]}"
         for override in overrides.split(",")

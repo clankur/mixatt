@@ -10,31 +10,45 @@ mesh:
   t: 1
 
 training:
-  warmup_steps: 290 
-  steps:        2900 
-  steps_for_lr: 2900 
+  warmup_steps: 240 
+  steps:        2400 
+  steps_for_lr: 2400 
   learning_rate: 7.3e-3
   tokens:
     batch: 256 
+  use_grad_clip: true
+  use_gpu: false
+  use_single_worker: false
+
 
 model:
-  d_model: 256 
+  d_model: 256
   n_q_per_kv: 1
-  n_kv: 16 
-  d_head: 64 
+  n_kv: 16
+  d_head: 64
+  d_ff: 1024
   layers: 8
-  d_ff: 1024 
   vocab: 32768
+
+  base:
+    d_model: 256
+    n_q_per_kv: 1
+    n_kv: 16
+    d_head: 64
+    d_ff: 1024
+
   rope_max_timescale: 10000
+
   a_attn: 1.
   a_output: 1.
   zero_queries: true
   zero_unembed: true
-  base:
-    d_model: 256 
-    n_q_per_kv: 1
-    n_kv: 16 
-    d_head: 64
-    d_ff: 1024 
 
-checkpoint_interval: 9200
+  parameterization: "sp"
+  fully_aligned: false
+  gamma_embed: 1.
+  gamma_hidden: 1.
+  gamma_unembed: 1.
+
+
+checkpoint_interval: 600
