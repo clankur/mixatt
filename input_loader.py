@@ -26,6 +26,7 @@ import functools
 from typing import Tuple, Union, Optional, List
 import time
 import random
+import os
 
 from typeguard import typechecked
 from shardlib.shardtypes import bool_, pytree_dataclass, u32
@@ -490,14 +491,110 @@ class HuggingFaceDataLoader:
         return TokenBatch(tokens, is_start)
 
 
+@dataclass(frozen=True)
+class LongCrawl64Params:
+    path: str
+    seed: int = 0
+
+
+class LongCrawl64Dataloader:
+    """Configurable dataloader for LongCrawl64."""
+
+    def __init__(
+        self,
+        split: str,
+        config: LongCrawl64Params,
+        token_batch_params: TokenBatchParams,
+    ):
+        assert split in ["train", "heldout"], "Invalid split"
+        self.path = os.path.join(config.path, f"{split}.zarr")
+        self.dataset = zarr.open(self.path, mode="r")
+        self.docs_per_batch = token_batch_params.batch
+        self.context_size = token_batch_params.len
+        self.max_token_id = 50303  # GPT-2 tiktoken vocabulary size - 1
+
+        # Step properties
+        self.tokens_per_batch = self.docs_per_batch * self.context_size
+
+        # Throw away edges
+        self.doc_count = self.dataset.shape[0] - (
+            self.dataset.shape[0] % self.docs_per_batch
+        )
+        self.doc_length = self.dataset.shape[1] - (
+            self.dataset.shape[1] % self.context_size
+        )
+        self.dataset_tokens = self.doc_count * self.doc_length
+        self.num_hosts = jax.process_count()
+        self.host_index = jax.process_index()
+
+    def __len__(self):
+        return self.dataset_tokens // (self.tokens_per_batch * self.num_hosts)
+
+    def __getitem__(self, index):
+        # Identify corner of the rectangle
+        index = index + self.host_index * len(self)
+        row_chunks = self.doc_count // self.docs_per_batch
+        context_idx = index // row_chunks
+        context_physical = context_idx * self.context_size
+        document_idx = index % row_chunks
+        document_physical = document_idx * self.docs_per_batch
+
+        # Slice the rectangle
+        data = self.dataset[
+            document_physical : document_physical + self.docs_per_batch,
+            context_physical : context_physical + self.context_size,
+        ]
+
+        # Convert to text/targets
+        text = np.roll(data, 1, axis=-1)
+        text[..., 0] = 50256  # eot token from tiktoken
+        minibatch = {
+            "text": np.array(text).astype(np.uint32),
+            "targets": np.array(data).astype(np.uint32),
+        }
+        return minibatch
+
+    def load(self, step: int) -> TokenBatch:
+        # Get the batch data using existing __getitem__ logic
+        minibatch = self[step]
+
+        # Create is_seq_start array - True only for first token of each document
+        shape = (self.docs_per_batch, self.context_size)
+        is_seq_start = np.zeros(shape, dtype=np.bool_)
+        is_seq_start[:, 0] = (
+            True  # First token of each document is a sequence start (no sequence packing)
+        )
+
+        # Create the TokenBatch with proper sharding
+        def get_shard(x: jax.Array, indexing: Tuple[slice]) -> jax.Array:
+            shard = x[indexing]
+            return shard
+
+        targets = jax.make_array_from_callback(
+            shape,
+            shardtypes.make_shardings(TokenBatch).targets,
+            functools.partial(get_shard, minibatch["targets"]),
+        )
+
+        is_seq_start = jax.make_array_from_callback(
+            shape,
+            shardtypes.make_shardings(TokenBatch).is_seq_start,
+            functools.partial(get_shard, is_seq_start),
+        )
+
+        return TokenBatch(targets=targets, is_seq_start=is_seq_start)
+
+
 def get_loader(
     split: str,
-    config: Union[FlatTokensParams, HuggingFaceDataParams],
+    config: Union[FlatTokensParams, HuggingFaceDataParams, LongCrawl64Params],
     token_batch_params: TokenBatchParams,
 ):
     if isinstance(config, FlatTokensParams):
         return ShufflingLoader(split, config, token_batch_params)
     elif isinstance(config, HuggingFaceDataParams):
         return HuggingFaceDataLoader(split, config, token_batch_params)
+    elif isinstance(config, LongCrawl64Params):
+        return LongCrawl64Dataloader(split, config, token_batch_params)
     else:
         raise ValueError(f"Unknown config type {type(config)}")

@@ -29,6 +29,7 @@ import math
 from input_loader import (
     FlatTokensParams,
     HuggingFaceDataParams,
+    LongCrawl64Params,
     TokenBatch,
     TokenBatchParams,
     get_loader,
@@ -768,18 +769,25 @@ class Config:
     io: training_io.IOConfig
     flat_tokens: Optional[FlatTokensParams] = None
     hf_dataset: Optional[HuggingFaceDataParams] = None
+    longcrawl: Optional[LongCrawl64Params] = None
 
     def __post_init__(self):
         assert (
-            self.flat_tokens is not None or self.hf_dataset is not None
-        ), "Must provide either flat_tokens or hf_dataset."
+            self.flat_tokens is not None
+            or self.hf_dataset is not None
+            or self.longcrawl is not None
+        ), "Must provide either flat_tokens or hf_dataset or longcrawl."
         assert not (
-            self.flat_tokens is not None and self.hf_dataset is not None
-        ), "Should not specify both flat_tokens and hf_dataset."
+            self.flat_tokens is not None
+            and self.hf_dataset is not None
+            and self.longcrawl is not None
+        ), "Should not specify both flat_tokens and hf_dataset and longcrawl."
 
     @cached_property
-    def training_data(self) -> Union[FlatTokensParams, HuggingFaceDataParams]:
-        return self.flat_tokens or self.hf_dataset
+    def training_data(
+        self,
+    ) -> Union[FlatTokensParams, HuggingFaceDataParams, LongCrawl64Params]:
+        return self.flat_tokens or self.hf_dataset or self.longcrawl
 
 
 def main_contained(config, logger):
