@@ -23,7 +23,6 @@ training:
   use_gpu: false
 
 longcrawl:
-  path: "/mnt/HDD/longcrawl64/data"
   seed: 0
 
 paths:

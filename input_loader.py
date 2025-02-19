@@ -506,7 +506,7 @@ class LongCrawl64Dataloader:
         config: LongCrawl64Params,
         token_batch_params: TokenBatchParams,
     ):
-        assert split in ["train", "validation"], "Invalid split"
+        assert split in ["train", "heldout"], "Invalid split"
         self.path = os.path.join(config.path, f"{split}.zarr")
         self.dataset = zarr.open(self.path, mode="r")
         self.docs_per_batch = token_batch_params.batch
