@@ -52,7 +52,7 @@ longcrawl:
   path: "/home/clankur/data"
 
 paths:
-  root_working_dir: "gs://longcrawl_v4-32_31m"
+    root_working_dir: "gs://c4_v4-32_31m"
 
 checkpoint_interval: 700 
 
