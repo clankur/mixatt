@@ -22,7 +22,15 @@ model:
   vocab: 1280 
   d_ff: 1024
   rope_max_timescale: 256
-  
+
+  # parameters for mixattention
+  window_size: 16 
+  n_kv_caches: 2
+  reuse_kv_map:
+    - [0, 0]
+    - [1, 1]
+  sa_layers: [0] 
+
   a_attn: 1
   a_output: 1
   zero_queries: true
