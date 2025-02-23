@@ -1,24 +1,26 @@
 # python -m train --config-name=c4_a100x8x4_37m +paths.model_name=270m
 defaults:
-  - slim_base
-  - _self_
+- c4_a100x8_base
+- _self_
 
 num_hosts: 4
 
 mesh:
-  d: 16
+  d: 16 
   t: 1
 
 training:
   warmup_steps: 240
-  steps:        2400
-  steps_for_lr: 2400
-  learning_rate: 1.35e-2
+  steps:        2400 
+  steps_for_lr: 2400 
+  learning_rate: 7.3e-3
   tokens:
-    batch: 256
+    batch: 32 
+    len: 8192
   use_grad_clip: true
   use_gpu: false
   use_single_worker: false
+
 
 model:
   d_model: 256
@@ -27,7 +29,7 @@ model:
   d_head: 64
   d_ff: 1024
   layers: 8
-  vocab: 32768
+  vocab: 50257
 
   base:
     d_model: 256
@@ -49,4 +51,5 @@ model:
   gamma_hidden: 1.
   gamma_unembed: 1.
 
-checkpoint_interval: 9200
+
+checkpoint_interval: 600

@@ -22,17 +22,12 @@ training:
   use_grad_clip: true
   use_gpu: false
 
-flat_tokens:
-  filespec: "" # Fill in
-  streams: 1
-  read_blocks_per_shuffle_buffer: 128
-  sequences_per_read_block: 1024
+longcrawl:
   seed: 0
-  sequence_packing: true
 
 paths:
   # root_working_dir can also be a path on a local filesystem
-  root_working_dir: "gs://c4_v4-32_31m"
+  root_working_dir: "/tmp"
 
 num_hosts: 1
 

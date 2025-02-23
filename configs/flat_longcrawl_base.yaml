@@ -24,9 +24,9 @@ training:
 
 flat_tokens:
   filespec: "" # Fill in
-  streams: 1
+  streams:  4
   read_blocks_per_shuffle_buffer: 128
-  sequences_per_read_block: 1024
+  sequences_per_read_block:  1024
   seed: 0
   sequence_packing: true
 

@@ -10,12 +10,25 @@ mesh:
   t: 1
 
 training:
+<<<<<<< HEAD
   warmup_steps: 290
   steps:        2900
   steps_for_lr: 2900
   learning_rate: 7.3e-3
   tokens:
     batch: 256
+=======
+  warmup_steps: 240 
+  steps:        2400 
+  steps_for_lr: 2400 
+  learning_rate: 7.3e-3
+  tokens:
+    batch: 256 
+  use_grad_clip: true
+  use_gpu: false
+  use_single_worker: false
+
+>>>>>>> b6c9999cb50e93cf6127fffe64a6c0b5e9a4a6b9
 
 model:
   d_model: 256
@@ -48,6 +61,7 @@ model:
     - 7
 
   rope_max_timescale: 10000
+
   a_attn: 1.
   a_output: 1.
   zero_queries: true
@@ -59,4 +73,5 @@ model:
   gamma_hidden: 1.
   gamma_unembed: 1.
 
-checkpoint_interval: 9200
+
+checkpoint_interval: 600

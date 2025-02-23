@@ -1,4 +1,4 @@
-# python -m train --config-name=c4_a100x8x4_37m +paths.model_name=270m
+# python -m train --config-name=c4_a100x8_270m +paths.model_name=270m
 defaults:
   - slim_base
   - _self_
@@ -6,14 +6,14 @@ defaults:
 num_hosts: 4
 
 mesh:
-  d: 16
+  d: 16 
   t: 1
 
 training:
-  warmup_steps: 240
-  steps:        2400
-  steps_for_lr: 2400
-  learning_rate: 1.35e-2
+  warmup_steps: 2300
+  steps:        23000
+  steps_for_lr: 23000
+  learning_rate: 8.0e-4
   tokens:
     batch: 256
   use_grad_clip: true
@@ -21,23 +21,22 @@ training:
   use_single_worker: false
 
 model:
-  d_model: 256
+  d_model: 1024
   n_q_per_kv: 1
   n_kv: 16
-  d_head: 64
-  d_ff: 1024
+  d_head: 128
+  d_ff: 8192
   layers: 8
   vocab: 32768
 
   base:
-    d_model: 256
+    d_model: 1024
     n_q_per_kv: 1
     n_kv: 16
-    d_head: 64
-    d_ff: 1024
-
+    d_head: 128
+    d_ff: 8192
+ 
   rope_max_timescale: 10000
-
   a_attn: 1.
   a_output: 1.
   zero_queries: true
@@ -46,7 +45,7 @@ model:
   parameterization: "sp"
   fully_aligned: false
   gamma_embed: 1.
-  gamma_hidden: 1.
+  gamma_hidden: 1. 
   gamma_unembed: 1.
-
-checkpoint_interval: 9200
+   
+checkpoint_interval: 23000

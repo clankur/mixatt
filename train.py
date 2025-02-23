@@ -29,6 +29,7 @@ import math
 from input_loader import (
     FlatTokensParams,
     HuggingFaceDataParams,
+    LongCrawl64Params,
     TokenBatch,
     TokenBatchParams,
     get_loader,
@@ -652,7 +653,7 @@ class TrainingHparams:
     n_log_iterations: Optional[int] = 5000
     use_grad_clip: Optional[bool] = True
     use_gpu: Optional[bool] = False
-    use_single_pod: Optional[bool] = False
+    use_single_worker: Optional[bool] = False
     use_multistage_training: Optional[bool] = False
 
 
@@ -852,18 +853,25 @@ class Config:
     io: training_io.IOConfig
     flat_tokens: Optional[FlatTokensParams] = None
     hf_dataset: Optional[HuggingFaceDataParams] = None
+    longcrawl: Optional[LongCrawl64Params] = None
 
     def __post_init__(self):
         assert (
-            self.flat_tokens is not None or self.hf_dataset is not None
-        ), "Must provide either flat_tokens or hf_dataset."
+            self.flat_tokens is not None
+            or self.hf_dataset is not None
+            or self.longcrawl is not None
+        ), "Must provide either flat_tokens or hf_dataset or longcrawl."
         assert not (
-            self.flat_tokens is not None and self.hf_dataset is not None
-        ), "Should not specify both flat_tokens and hf_dataset."
+            self.flat_tokens is not None
+            and self.hf_dataset is not None
+            and self.longcrawl is not None
+        ), "Should not specify both flat_tokens and hf_dataset and longcrawl."
 
     @cached_property
-    def training_data(self) -> Union[FlatTokensParams, HuggingFaceDataParams]:
-        return self.flat_tokens or self.hf_dataset
+    def training_data(
+        self,
+    ) -> Union[FlatTokensParams, HuggingFaceDataParams, LongCrawl64Params]:
+        return self.flat_tokens or self.hf_dataset or self.longcrawl
 
 
 def main_contained(config, logger):
@@ -875,7 +883,7 @@ def main_contained(config, logger):
     # TODO: check this is true and if not, provide our own that actually is fusable.
 
     # 4x 1 chip (2 cores) per process:
-    if config.training.use_single_pod:
+    if config.training.use_single_worker:
         os.environ["TPU_CHIPS_PER_HOST_BOUNDS"] = "1,1,1"
         os.environ["TPU_HOST_BOUNDS"] = "1,1,1"
     jax.config.update("jax_threefry_partitionable", True)
@@ -980,7 +988,7 @@ def main_contained(config, logger):
                 model_params = jax.tree.reduce(
                     operator.add, jax.tree.map(lambda w: w.size, state.weights)
                 )
-                tokens = loader.load(step).targets.size
+                tokens = batch.targets.size
                 print(f"Model params: {model_params:_}")
                 print(f"Tokens: {tokens:_}")
                 device_flops = training_io.get_flops_per_device()
@@ -1006,7 +1014,7 @@ def main_contained(config, logger):
 
         end_time = time.time()
         print(f"Total time: {end_time - start_time:.2f} seconds")
-
+        training_io.save_checkpoint(model_dir, config.training.steps, state, config.io)
         print("Evaluating final model...")
         loader = get_loader("validation", config.training_data, config.training.tokens)
 
@@ -1062,9 +1070,7 @@ def clear_tpu_locks():
 def get_filtered_overrides():
     """Get filtered override strings from Hydra config, excluding certain overrides."""
     overrides = hydra.core.hydra_config.HydraConfig.get()["job"]["override_dirname"]
-    ignore_overrides = [
-        "training.queue",
-    ]
+    ignore_overrides = ["training.queue", "flat_tokens.filespec"]
     return [
         f"{override.lstrip('+').split('=')[0].split('.')[-1]}={override.split('=')[1]}"
         for override in overrides.split(",")
